@@ -108,6 +108,28 @@
     outline-offset: -4px;
   }
 
+  /* フォルダアイコンへのドロップハイライト */
+  .icon.folder-drop-hover {
+    background: rgba(0,120,212,0.2);
+    outline: 2px solid #0078d4;
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* フォルダ内並び替え: ドロップ挿入位置インジケーター */
+  .window-content .icon.sort-insert-before::before,
+  .window-content .icon.sort-insert-after::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 3px;
+    background: #0078d4;
+    border-radius: 2px;
+    z-index: 10;
+  }
+  .window-content .icon.sort-insert-before::before { left: -6px; }
+  .window-content .icon.sort-insert-after::after  { right: -6px; }
+
   .window-statusbar {
     height: 24px; background: #f0f0f0;
     border-top: 1px solid #ccc;
@@ -541,11 +563,13 @@ function makeDraggable(el, item) {
       // フォルダD&Dハイライト解除
       document.querySelectorAll('.window-content.drop-target')
         .forEach(c => c.classList.remove('drop-target'));
+      document.querySelectorAll('.folder-drop-hover')
+        .forEach(c => c.classList.remove('folder-drop-hover'));
 
       if (window._draggingItem === item) {
         // ゴミ箱ドロップは initTrashDrop 側で処理済みの場合がある
-        // フォルダウィンドウへのドロップ判定
-        const targetFolderId = getFolderDropTarget(e.clientX, e.clientY);
+        // フォルダウィンドウ or フォルダアイコンへのドロップ判定
+        const targetFolderId = getFolderDropTarget(e.clientX, e.clientY, item.id);
         if (targetFolderId && targetFolderId !== item.id) {
           // フォルダへ移動
           item.parentId = targetFolderId;
@@ -572,10 +596,19 @@ function makeDraggable(el, item) {
   });
 }
 
-// ===== フォルダ内アイコンのドラッグ（フォルダ外へ移動対応） =====
+// ===== フォルダ内アイコンのドラッグ（並び替え・フォルダ外移動対応） =====
 function makeDraggableFromFolder(el, item, container) {
   let dragging = false, startX = 0, startY = 0, moved = false;
-  let ghost = null; // ドラッグ中のゴースト要素
+  let ghost = null;
+
+  // 並び替え用: ホバー中のターゲット要素と挿入位置
+  let sortTarget = null, sortInsertAfter = false;
+
+  function clearSortIndicators() {
+    container.querySelectorAll('.sort-insert-before, .sort-insert-after')
+      .forEach(e => e.classList.remove('sort-insert-before', 'sort-insert-after'));
+    sortTarget = null;
+  }
 
   el.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
@@ -592,7 +625,6 @@ function makeDraggableFromFolder(el, item, container) {
     if (!moved && (dx > 6 || dy > 6)) {
       moved = true;
       window._draggingItem = item;
-      // ゴースト要素を作成してカーソルに追従させる
       ghost = document.createElement('div');
       ghost.className = 'icon dragging';
       ghost.style.cssText = `position:fixed;pointer-events:none;z-index:99999;width:80px;opacity:0.7;`;
@@ -602,33 +634,81 @@ function makeDraggableFromFolder(el, item, container) {
     if (!moved || !ghost) return;
     ghost.style.left = (e.clientX - 40) + 'px';
     ghost.style.top  = (e.clientY - 45) + 'px';
+
+    // 同フォルダ内の並び替えインジケーター更新
+    clearSortIndicators();
+    const targetFolderId = getFolderDropTarget(e.clientX, e.clientY, item.id);
+    if (targetFolderId === item.parentId) {
+      // 同じフォルダウィンドウ内でホバー → 挿入位置を計算
+      const siblings = [...container.querySelectorAll('.icon')].filter(s => s !== el);
+      let closest = null, closestDist = Infinity, insertAfter = false;
+      for (const sib of siblings) {
+        const r = sib.getBoundingClientRect();
+        const cx = r.left + r.width / 2;
+        const cy = r.top  + r.height / 2;
+        const dist = Math.hypot(e.clientX - cx, e.clientY - cy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = sib;
+          insertAfter = e.clientX > cx;
+        }
+      }
+      if (closest) {
+        sortTarget = closest;
+        sortInsertAfter = insertAfter;
+        closest.classList.add(insertAfter ? 'sort-insert-after' : 'sort-insert-before');
+      }
+    }
   });
 
   document.addEventListener('mouseup', (e) => {
     if (!dragging) return;
     dragging = false;
     if (ghost) { ghost.remove(); ghost = null; }
+    clearSortIndicators();
 
     if (moved && window._draggingItem === item) {
-      // フォルダD&Dハイライト解除
       document.querySelectorAll('.window-content.drop-target')
         .forEach(c => c.classList.remove('drop-target'));
+      document.querySelectorAll('.folder-drop-hover')
+        .forEach(c => c.classList.remove('folder-drop-hover'));
 
-      const targetFolderId = getFolderDropTarget(e.clientX, e.clientY);
+      const targetFolderId = getFolderDropTarget(e.clientX, e.clientY, item.id);
       const desktop = document.getElementById('desktop');
       const dr = desktop.getBoundingClientRect();
       const onDesktop = e.clientX >= dr.left && e.clientX <= dr.right &&
                         e.clientY >= dr.top  && e.clientY <= dr.bottom;
 
-      if (targetFolderId && targetFolderId !== item.parentId && targetFolderId !== item.id) {
-        // 別のフォルダへ移動
+      if (targetFolderId === item.parentId) {
+        // ===== 同フォルダ内 並び替え =====
+        if (sortTarget) {
+          const targetItemId = sortTarget.dataset.id;
+          const siblings = state.items.filter(i => i.parentId === item.parentId);
+          const fromIdx = siblings.findIndex(i => i.id === item.id);
+          let toIdx   = siblings.findIndex(i => i.id === targetItemId);
+          if (sortInsertAfter) toIdx++;
+          if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+            // state.items 全体の中で並び替え
+            const globalFrom = state.items.indexOf(item);
+            state.items.splice(globalFrom, 1);
+            // 再検索（splice後にインデックスがずれるため）
+            const targetItem = state.items.find(i => i.id === targetItemId);
+            let globalTo = state.items.indexOf(targetItem);
+            if (sortInsertAfter) globalTo++;
+            state.items.splice(globalTo, 0, item);
+            saveState();
+            renderAll();
+          }
+        }
+      } else if (targetFolderId && targetFolderId !== item.id) {
+        // ===== 別のフォルダへ移動 =====
         item.parentId = targetFolderId;
         item.x = null; item.y = null;
         saveState();
         renderAll();
         toast(`「${item.name}」をフォルダに移動しました`);
       } else if (onDesktop && !targetFolderId) {
-        // デスクトップへ移動
+        // ===== デスクトップへ移動 =====
         const dropX = e.clientX - dr.left - 40;
         const dropY = e.clientY - dr.top  - 45;
         item.parentId = null;
@@ -1366,15 +1446,43 @@ document.addEventListener('mousemove', (e) => {
     const isSameFolder = window._draggingItem.parentId === folderId;
     content.classList.toggle('drop-target', over && !isSameFolder);
   });
+
+  // デスクトップ上のフォルダアイコン自体へのホバーハイライト
+  const desktop = document.getElementById('desktop');
+  desktop.querySelectorAll('.icon').forEach(iconEl => {
+    const iconItem = state.items.find(i => i.id === iconEl.dataset.id);
+    if (!iconItem || iconItem.type !== 'folder') { iconEl.classList.remove('folder-drop-hover'); return; }
+    if (iconItem.id === window._draggingItem.id) { iconEl.classList.remove('folder-drop-hover'); return; }
+    if (window._draggingItem.parentId === iconItem.id) { iconEl.classList.remove('folder-drop-hover'); return; }
+    const r = iconEl.getBoundingClientRect();
+    const over = e.clientX >= r.left && e.clientX <= r.right &&
+                 e.clientY >= r.top  && e.clientY <= r.bottom;
+    iconEl.classList.toggle('folder-drop-hover', over);
+  });
 });
 
 // ドロップ先のフォルダIDを返す（なければnull）
-function getFolderDropTarget(cx, cy) {
+// 1) 開いているフォルダウィンドウのコンテンツ領域
+// 2) デスクトップ上のフォルダアイコン自体
+function getFolderDropTarget(cx, cy, draggingItemId) {
+  // 開いているウィンドウのコンテンツ領域を優先
   const contents = document.querySelectorAll('.window-content');
   for (const content of contents) {
     const r = content.getBoundingClientRect();
     if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
       return content.id.replace('wincontent_', '');
+    }
+  }
+  // デスクトップ上のフォルダアイコン
+  const desktop = document.getElementById('desktop');
+  const folderIcons = desktop.querySelectorAll('.icon');
+  for (const iconEl of folderIcons) {
+    const iconItem = state.items.find(i => i.id === iconEl.dataset.id);
+    if (!iconItem || iconItem.type !== 'folder') continue;
+    if (draggingItemId && iconItem.id === draggingItemId) continue;
+    const r = iconEl.getBoundingClientRect();
+    if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+      return iconItem.id;
     }
   }
   return null;
