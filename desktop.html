@@ -368,8 +368,11 @@ function getFolderSvg(color) {
 }
 
 function getIconHtml(item) {
-  if (item.icon && item.icon.startsWith('http')) {
-    return `<img src="${item.icon}" style="width:48px;height:48px;object-fit:contain;">`;
+  if (item.iconType === 'emoji' && item.iconEmoji) {
+    return `<span style="font-size:36px;line-height:48px;">${escHtml(item.iconEmoji)}</span>`;
+  }
+  if (item.iconType === 'url' && item.iconUrl) {
+    return `<img src="${escHtml(item.iconUrl)}" style="width:48px;height:48px;object-fit:contain;" onerror="this.style.display='none'">`;
   }
   if (item.type === 'folder') {
     return getFolderSvg(item.color);
@@ -747,10 +750,87 @@ function closeModal() {
   if (container.lastChild) container.removeChild(container.lastChild);
 }
 
+// ===== アイコン設定フォームHTML生成 =====
+function iconFieldsHtml(iconType, iconEmoji, iconUrl, color, isFolder) {
+  const defColor = isFolder ? '#e6a817' : '#0078d4';
+  return `
+    <div class="modal-field">
+      <label>アイコン種別</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:4px;font-weight:normal;cursor:pointer;">
+          <input type="radio" name="m_icon_type" value="default" ${iconType === 'default' || !iconType ? 'checked' : ''}> デフォルト
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-weight:normal;cursor:pointer;">
+          <input type="radio" name="m_icon_type" value="emoji" ${iconType === 'emoji' ? 'checked' : ''}> 絵文字
+        </label>
+        <label style="display:flex;align-items:center;gap:4px;font-weight:normal;cursor:pointer;">
+          <input type="radio" name="m_icon_type" value="url" ${iconType === 'url' ? 'checked' : ''}> 画像URL
+        </label>
+      </div>
+    </div>
+    <div id="m_icon_default_row" class="modal-field" style="${iconType === 'emoji' || iconType === 'url' ? 'display:none' : ''}">
+      <label>アイコン色</label>
+      <input type="color" id="m_color" value="${color || defColor}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
+    </div>
+    <div id="m_icon_emoji_row" class="modal-field" style="${iconType === 'emoji' ? '' : 'display:none'}">
+      <label>絵文字</label>
+      <input type="text" id="m_icon_emoji" value="${escHtml(iconEmoji || '')}" placeholder="例: 📊 🗂️ 🔖" maxlength="4" style="width:80px;font-size:22px;text-align:center;">
+    </div>
+    <div id="m_icon_url_row" class="modal-field" style="${iconType === 'url' ? '' : 'display:none'}">
+      <label>画像URL</label>
+      <input type="url" id="m_icon_url" value="${escHtml(iconUrl || '')}" placeholder="https://example.com/icon.png">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">プレビュー</label>
+      <div id="m_icon_preview" style="width:56px;height:56px;background:#eee;border-radius:6px;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:32px;overflow:hidden;"></div>
+    </div>
+  `;
+}
+
+function initIconFields(modal, isFolder, defaultColor) {
+  const updateVisibility = () => {
+    const type = modal.querySelector('input[name="m_icon_type"]:checked')?.value || 'default';
+    modal.querySelector('#m_icon_default_row').style.display = type === 'default' ? '' : 'none';
+    modal.querySelector('#m_icon_emoji_row').style.display   = type === 'emoji'   ? '' : 'none';
+    modal.querySelector('#m_icon_url_row').style.display     = type === 'url'     ? '' : 'none';
+    updatePreview(modal, isFolder);
+  };
+
+  modal.querySelectorAll('input[name="m_icon_type"]').forEach(r => {
+    r.addEventListener('change', updateVisibility);
+  });
+  modal.querySelector('#m_color')?.addEventListener('input', () => updatePreview(modal, isFolder));
+  modal.querySelector('#m_icon_emoji')?.addEventListener('input', () => updatePreview(modal, isFolder));
+  modal.querySelector('#m_icon_url')?.addEventListener('input', () => updatePreview(modal, isFolder));
+
+  updatePreview(modal, isFolder);
+}
+
+function updatePreview(modal, isFolder) {
+  const preview = modal.querySelector('#m_icon_preview');
+  if (!preview) return;
+  const type    = modal.querySelector('input[name="m_icon_type"]:checked')?.value || 'default';
+  const emoji   = modal.querySelector('#m_icon_emoji')?.value || '';
+  const url     = modal.querySelector('#m_icon_url')?.value || '';
+  const color   = modal.querySelector('#m_color')?.value || (isFolder ? '#e6a817' : '#0078d4');
+
+  const fakeItem = { type: isFolder ? 'folder' : 'link', iconType: type, iconEmoji: emoji, iconUrl: url, color };
+  preview.innerHTML = getIconHtml(fakeItem);
+}
+
+function getIconDataFromModal(modal) {
+  const iconType  = modal.querySelector('input[name="m_icon_type"]:checked')?.value || 'default';
+  const iconEmoji = modal.querySelector('#m_icon_emoji')?.value.trim() || '';
+  const iconUrl   = modal.querySelector('#m_icon_url')?.value.trim()   || '';
+  const color     = modal.querySelector('#m_color')?.value || '#0078d4';
+  return { iconType, iconEmoji, iconUrl, color };
+}
+
 // ===== リンク・フォルダ追加モーダル =====
 function openAddModal(type, parentId) {
-  const isLink = type === 'link';
-  const title  = isLink ? '🔗 新しいリンクを追加' : '📁 新しいフォルダを追加';
+  const isLink   = type === 'link';
+  const isFolder = type === 'folder';
+  const title    = isLink ? '🔗 新しいリンクを追加' : '📁 新しいフォルダを追加';
 
   const html = `
     <h2>${title}</h2>
@@ -763,10 +843,7 @@ function openAddModal(type, parentId) {
       <label>URL *</label>
       <input type="url" id="m_url" placeholder="https://...">
     </div>` : ''}
-    <div class="modal-field">
-      <label>アイコン色</label>
-      <input type="color" id="m_color" value="${isLink ? '#0078d4' : '#e6a817'}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
-    </div>
+    ${iconFieldsHtml('default', '', '', '', isFolder)}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-primary" id="m_submit">追加</button>
@@ -774,20 +851,20 @@ function openAddModal(type, parentId) {
   `;
 
   showModal(html, (modal) => {
+    initIconFields(modal, isFolder, isFolder ? '#e6a817' : '#0078d4');
     modal.querySelector('#m_name').focus();
     modal.querySelector('#m_submit').addEventListener('click', () => {
-      const name  = modal.querySelector('#m_name').value.trim();
-      const url   = isLink ? modal.querySelector('#m_url').value.trim() : null;
-      const color = modal.querySelector('#m_color').value;
+      const name = modal.querySelector('#m_name').value.trim();
+      const url  = isLink ? modal.querySelector('#m_url').value.trim() : null;
+      const { iconType, iconEmoji, iconUrl, color } = getIconDataFromModal(modal);
 
       if (!name) { alert('名前を入力してください'); return; }
       if (isLink && !url) { alert('URLを入力してください'); return; }
 
-      // 自動配置
       const pos = findFreePosition(parentId);
-
       const item = {
         id: genId(), type, name, color,
+        iconType, iconEmoji, iconUrl,
         x: pos.x, y: pos.y,
         parentId: parentId || null,
       };
@@ -808,7 +885,8 @@ function openAddModal(type, parentId) {
 
 // ===== 編集モーダル =====
 function openEditModal(item) {
-  const isLink = item.type === 'link';
+  const isLink   = item.type === 'link';
+  const isFolder = item.type === 'folder';
   const html = `
     <h2>${isLink ? '✏️ リンクを編集' : '✏️ フォルダを編集'}</h2>
     <div class="modal-field">
@@ -820,10 +898,7 @@ function openEditModal(item) {
       <label>URL *</label>
       <input type="url" id="m_url" value="${escHtml(item.url || '')}">
     </div>` : ''}
-    <div class="modal-field">
-      <label>アイコン色</label>
-      <input type="color" id="m_color" value="${item.color || (isLink ? '#0078d4' : '#e6a817')}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
-    </div>
+    ${iconFieldsHtml(item.iconType || 'default', item.iconEmoji || '', item.iconUrl || '', item.color || '', isFolder)}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
       <button class="btn btn-primary" id="m_submit">保存</button>
@@ -831,17 +906,21 @@ function openEditModal(item) {
   `;
 
   showModal(html, (modal) => {
+    initIconFields(modal, isFolder, item.color || (isFolder ? '#e6a817' : '#0078d4'));
     modal.querySelector('#m_name').focus();
     modal.querySelector('#m_submit').addEventListener('click', () => {
-      const name  = modal.querySelector('#m_name').value.trim();
-      const url   = isLink ? modal.querySelector('#m_url').value.trim() : null;
-      const color = modal.querySelector('#m_color').value;
+      const name = modal.querySelector('#m_name').value.trim();
+      const url  = isLink ? modal.querySelector('#m_url').value.trim() : null;
+      const { iconType, iconEmoji, iconUrl, color } = getIconDataFromModal(modal);
 
       if (!name) { alert('名前を入力してください'); return; }
       if (isLink && !url) { alert('URLを入力してください'); return; }
 
-      item.name  = name;
-      item.color = color;
+      item.name      = name;
+      item.color     = color;
+      item.iconType  = iconType;
+      item.iconEmoji = iconEmoji;
+      item.iconUrl   = iconUrl;
       if (isLink) item.url = url;
 
       saveState();
