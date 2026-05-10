@@ -604,10 +604,10 @@ function makeDraggableFromFolder(el, item, container) {
   // 並び替え用: ホバー中のターゲット要素と挿入位置
   let sortTarget = null, sortInsertAfter = false;
 
-  function clearSortIndicators() {
+  function clearSortIndicators(resetTarget = true) {
     container.querySelectorAll('.sort-insert-before, .sort-insert-after')
       .forEach(e => e.classList.remove('sort-insert-before', 'sort-insert-after'));
-    sortTarget = null;
+    if (resetTarget) sortTarget = null;
   }
 
   el.addEventListener('mousedown', (e) => {
@@ -665,7 +665,7 @@ function makeDraggableFromFolder(el, item, container) {
     if (!dragging) return;
     dragging = false;
     if (ghost) { ghost.remove(); ghost = null; }
-    clearSortIndicators();
+    clearSortIndicators(false); // CSSクラスのみ除去（sortTargetは後で使うため保持）
 
     if (moved && window._draggingItem === item) {
       document.querySelectorAll('.window-content.drop-target')
@@ -683,22 +683,19 @@ function makeDraggableFromFolder(el, item, container) {
         // ===== 同フォルダ内 並び替え =====
         if (sortTarget) {
           const targetItemId = sortTarget.dataset.id;
-          const siblings = state.items.filter(i => i.parentId === item.parentId);
-          const fromIdx = siblings.findIndex(i => i.id === item.id);
-          let toIdx   = siblings.findIndex(i => i.id === targetItemId);
-          if (sortInsertAfter) toIdx++;
-          if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-            // state.items 全体の中で並び替え
-            const globalFrom = state.items.indexOf(item);
-            state.items.splice(globalFrom, 1);
-            // 再検索（splice後にインデックスがずれるため）
-            const targetItem = state.items.find(i => i.id === targetItemId);
-            let globalTo = state.items.indexOf(targetItem);
-            if (sortInsertAfter) globalTo++;
-            state.items.splice(globalTo, 0, item);
-            saveState();
-            renderAll();
-          }
+          sortTarget = null; // リセット
+          const globalFrom = state.items.indexOf(item);
+          state.items.splice(globalFrom, 1);
+          // splice後に再検索してインデックスを取得
+          const targetItem = state.items.find(i => i.id === targetItemId);
+          let globalTo = state.items.indexOf(targetItem);
+          if (sortInsertAfter) globalTo++;
+          if (globalTo < 0) globalTo = 0;
+          state.items.splice(globalTo, 0, item);
+          saveState();
+          renderAll();
+        } else {
+          sortTarget = null;
         }
       } else if (targetFolderId && targetFolderId !== item.id) {
         // ===== 別のフォルダへ移動 =====
