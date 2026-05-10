@@ -97,9 +97,15 @@
     display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px;
     overflow-y: auto; background: #fff;
     position: relative; min-height: 200px;
+    transition: background 0.15s;
   }
   .window-content .icon {
     position: relative; left: auto; top: auto;
+  }
+  .window-content.drop-target {
+    background: rgba(0,120,212,0.08);
+    outline: 2px dashed #0078d4;
+    outline-offset: -4px;
   }
 
   .window-statusbar {
@@ -479,9 +485,11 @@ function createIconElement(item, container) {
     selectIcon(el);
   });
 
-  // ドラッグ（デスクトップ上のみ）
+  // ドラッグ（デスクトップ上 or フォルダウィンドウ内）
   if (container === document.getElementById('desktop')) {
     makeDraggable(el, item);
+  } else if (container && container.classList.contains('window-content')) {
+    makeDraggableFromFolder(el, item, container);
   }
 
   return el;
@@ -530,20 +538,108 @@ function makeDraggable(el, item) {
     dragging = false;
     if (moved) {
       el.classList.remove('dragging');
-      // ゴミ箱ドロップ処理は initTrashDrop 側で行うため、
-      // _draggingItem が残っていれば位置を保存
+      // フォルダD&Dハイライト解除
+      document.querySelectorAll('.window-content.drop-target')
+        .forEach(c => c.classList.remove('drop-target'));
+
       if (window._draggingItem === item) {
-        let nx = parseInt(el.style.left);
-        let ny = parseInt(el.style.top);
-        // 重なり防止: 他のアイコンと重複する場合は近傍の空きセルにスナップ
-        const resolved = resolveOverlap(item.id, nx, ny);
-        item.x = resolved.x;
-        item.y = resolved.y;
-        el.style.left = resolved.x + 'px';
-        el.style.top  = resolved.y + 'px';
-        saveState();
+        // ゴミ箱ドロップは initTrashDrop 側で処理済みの場合がある
+        // フォルダウィンドウへのドロップ判定
+        const targetFolderId = getFolderDropTarget(e.clientX, e.clientY);
+        if (targetFolderId && targetFolderId !== item.id) {
+          // フォルダへ移動
+          item.parentId = targetFolderId;
+          item.x = null; item.y = null;
+          saveState();
+          renderAll();
+          toast(`「${item.name}」をフォルダに移動しました`);
+        } else {
+          // デスクトップ上で位置保存（重なり防止）
+          let nx = parseInt(el.style.left);
+          let ny = parseInt(el.style.top);
+          const resolved = resolveOverlap(item.id, nx, ny);
+          item.x = resolved.x;
+          item.y = resolved.y;
+          el.style.left = resolved.x + 'px';
+          el.style.top  = resolved.y + 'px';
+          saveState();
+        }
         window._draggingItem = null;
       }
+    } else {
+      window._draggingItem = null;
+    }
+  });
+}
+
+// ===== フォルダ内アイコンのドラッグ（フォルダ外へ移動対応） =====
+function makeDraggableFromFolder(el, item, container) {
+  let dragging = false, startX = 0, startY = 0, moved = false;
+  let ghost = null; // ドラッグ中のゴースト要素
+
+  el.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = Math.abs(e.clientX - startX);
+    const dy = Math.abs(e.clientY - startY);
+    if (!moved && (dx > 6 || dy > 6)) {
+      moved = true;
+      window._draggingItem = item;
+      // ゴースト要素を作成してカーソルに追従させる
+      ghost = document.createElement('div');
+      ghost.className = 'icon dragging';
+      ghost.style.cssText = `position:fixed;pointer-events:none;z-index:99999;width:80px;opacity:0.7;`;
+      ghost.innerHTML = el.innerHTML;
+      document.body.appendChild(ghost);
+    }
+    if (!moved || !ghost) return;
+    ghost.style.left = (e.clientX - 40) + 'px';
+    ghost.style.top  = (e.clientY - 45) + 'px';
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    if (ghost) { ghost.remove(); ghost = null; }
+
+    if (moved && window._draggingItem === item) {
+      // フォルダD&Dハイライト解除
+      document.querySelectorAll('.window-content.drop-target')
+        .forEach(c => c.classList.remove('drop-target'));
+
+      const targetFolderId = getFolderDropTarget(e.clientX, e.clientY);
+      const desktop = document.getElementById('desktop');
+      const dr = desktop.getBoundingClientRect();
+      const onDesktop = e.clientX >= dr.left && e.clientX <= dr.right &&
+                        e.clientY >= dr.top  && e.clientY <= dr.bottom;
+
+      if (targetFolderId && targetFolderId !== item.parentId && targetFolderId !== item.id) {
+        // 別のフォルダへ移動
+        item.parentId = targetFolderId;
+        item.x = null; item.y = null;
+        saveState();
+        renderAll();
+        toast(`「${item.name}」をフォルダに移動しました`);
+      } else if (onDesktop && !targetFolderId) {
+        // デスクトップへ移動
+        const dropX = e.clientX - dr.left - 40;
+        const dropY = e.clientY - dr.top  - 45;
+        item.parentId = null;
+        const pos = resolveOverlap(item.id, Math.max(0, dropX), Math.max(0, dropY));
+        item.x = pos.x;
+        item.y = pos.y;
+        saveState();
+        renderAll();
+        toast(`「${item.name}」をデスクトップに移動しました`);
+      }
+      window._draggingItem = null;
     } else {
       window._draggingItem = null;
     }
@@ -1254,8 +1350,34 @@ function initTrashDrop() {
       window._draggingItem = null;
       deleteItem(item, true); // confirm不要
     }
-    window._draggingItem = null;
   });
+}
+
+// ===== フォルダD&Dターゲット判定 =====
+// ドラッグ中: 開いているフォルダウィンドウのコンテンツ領域をハイライト
+document.addEventListener('mousemove', (e) => {
+  if (!window._draggingItem) return;
+  document.querySelectorAll('.window-content').forEach(content => {
+    const r = content.getBoundingClientRect();
+    const over = e.clientX >= r.left && e.clientX <= r.right &&
+                 e.clientY >= r.top  && e.clientY <= r.bottom;
+    // ドラッグ中アイテムが既にそのフォルダ内なら除外
+    const folderId = content.id.replace('wincontent_', '');
+    const isSameFolder = window._draggingItem.parentId === folderId;
+    content.classList.toggle('drop-target', over && !isSameFolder);
+  });
+});
+
+// ドロップ先のフォルダIDを返す（なければnull）
+function getFolderDropTarget(cx, cy) {
+  const contents = document.querySelectorAll('.window-content');
+  for (const content of contents) {
+    const r = content.getBoundingClientRect();
+    if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+      return content.id.replace('wincontent_', '');
+    }
+  }
+  return null;
 }
 
 // ===== 重なり解決 =====
