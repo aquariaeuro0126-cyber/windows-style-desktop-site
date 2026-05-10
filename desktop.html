@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Desktop</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    font-family: 'Segoe UI', Meiryo, sans-serif;
+    background: linear-gradient(135deg, #0078d4 0%, #005a9e 40%, #003d6b 100%);
+    cursor: default;
+  }
+
+  /* ===== デスクトップ ===== */
+  #desktop {
+    width: 100%; height: calc(100vh - 48px);
+    position: relative; overflow: hidden;
+  }
+
+  /* ===== アイコン ===== */
+  .icon {
+    position: absolute;
+    width: 80px;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 6px 4px; border-radius: 4px; cursor: pointer;
+    transition: background 0.1s;
+  }
+  .icon:hover { background: rgba(255,255,255,0.15); }
+  .icon.selected { background: rgba(255,255,255,0.25); outline: 1px solid rgba(255,255,255,0.6); }
+  .icon.dragging { opacity: 0.6; z-index: 1000; }
+
+  .icon-img {
+    width: 48px; height: 48px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; position: relative;
+  }
+  .icon-img svg { width: 48px; height: 48px; }
+
+  .icon-label {
+    margin-top: 4px;
+    font-size: 12px; color: #fff;
+    text-align: center; word-break: break-all;
+    line-height: 1.3;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    max-width: 76px;
+    overflow: hidden; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  }
+
+  /* ===== フォルダウィンドウ ===== */
+  .folder-window {
+    position: absolute;
+    min-width: 400px; min-height: 300px;
+    background: #f0f0f0;
+    border: 1px solid #999;
+    border-radius: 8px 8px 4px 4px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 100;
+    display: flex; flex-direction: column;
+    resize: both; overflow: hidden;
+  }
+  .folder-window.active { z-index: 200; }
+
+  .window-titlebar {
+    height: 32px;
+    background: linear-gradient(to bottom, #0078d4, #005a9e);
+    border-radius: 7px 7px 0 0;
+    display: flex; align-items: center; padding: 0 8px;
+    cursor: move; flex-shrink: 0;
+  }
+  .window-title {
+    color: #fff; font-size: 13px; font-weight: 600;
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    margin-left: 6px;
+  }
+  .window-folder-icon { font-size: 16px; }
+
+  .window-controls { display: flex; gap: 4px; }
+  .win-btn {
+    width: 24px; height: 20px; border: none; border-radius: 3px;
+    cursor: pointer; font-size: 11px; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.1s;
+  }
+  .win-btn-min { background: rgba(255,255,255,0.2); color: #fff; }
+  .win-btn-min:hover { background: rgba(255,255,255,0.4); }
+  .win-btn-max { background: rgba(255,255,255,0.2); color: #fff; }
+  .win-btn-max:hover { background: rgba(255,255,255,0.4); }
+  .win-btn-close { background: rgba(255,255,255,0.2); color: #fff; }
+  .win-btn-close:hover { background: #e81123; }
+
+  .window-content {
+    flex: 1; padding: 12px;
+    display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px;
+    overflow-y: auto; background: #fff;
+    position: relative; min-height: 200px;
+  }
+  .window-content .icon {
+    position: relative; left: auto; top: auto;
+  }
+
+  .window-statusbar {
+    height: 24px; background: #f0f0f0;
+    border-top: 1px solid #ccc;
+    display: flex; align-items: center; padding: 0 8px;
+    font-size: 11px; color: #666; flex-shrink: 0;
+  }
+
+  /* ===== タスクバー ===== */
+  #taskbar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 48px;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(255,255,255,0.1);
+    display: flex; align-items: center; padding: 0 8px;
+    z-index: 9999;
+  }
+
+  .taskbar-start {
+    width: 40px; height: 40px; border-radius: 4px;
+    background: transparent; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; transition: background 0.1s;
+    color: #fff;
+  }
+  .taskbar-start:hover { background: rgba(255,255,255,0.1); }
+
+  .taskbar-tasks {
+    flex: 1; display: flex; align-items: center; gap: 4px;
+    overflow: hidden; margin: 0 8px;
+  }
+  .taskbar-task-btn {
+    height: 36px; min-width: 40px; max-width: 160px;
+    border: none; border-radius: 4px;
+    background: rgba(255,255,255,0.1); color: #fff;
+    cursor: pointer; font-size: 12px; padding: 0 10px;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 0.1s;
+  }
+  .taskbar-task-btn:hover { background: rgba(255,255,255,0.2); }
+  .taskbar-task-btn.active { background: rgba(255,255,255,0.25); border-bottom: 2px solid #0078d4; }
+
+  .taskbar-tray {
+    display: flex; align-items: center; gap: 4px;
+  }
+  .tray-btn {
+    width: 40px; height: 40px; border-radius: 4px;
+    background: transparent; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #fff; transition: background 0.1s;
+    position: relative;
+  }
+  .tray-btn:hover { background: rgba(255,255,255,0.1); }
+  .tray-btn[title]:hover::after {
+    content: attr(title);
+    position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); color: #fff;
+    padding: 4px 8px; border-radius: 4px; font-size: 11px;
+    white-space: nowrap; pointer-events: none; z-index: 10000;
+  }
+
+  .taskbar-clock {
+    text-align: center; color: #fff; font-size: 11px;
+    padding: 0 8px; line-height: 1.4; cursor: default;
+  }
+
+  /* ===== コンテキストメニュー ===== */
+  #context-menu {
+    position: fixed; z-index: 99999;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+    padding: 4px 0; min-width: 180px;
+    display: none;
+  }
+  .ctx-item {
+    padding: 7px 16px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    color: #222; transition: background 0.1s;
+  }
+  .ctx-item:hover { background: #0078d4; color: #fff; }
+  .ctx-item.danger:hover { background: #e81123; }
+  .ctx-separator { height: 1px; background: #e0e0e0; margin: 4px 0; }
+  .ctx-icon { width: 16px; text-align: center; font-size: 14px; }
+
+  /* ===== モーダル ===== */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 100000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal {
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    width: 420px; max-width: 95vw;
+    padding: 24px;
+  }
+  .modal h2 {
+    font-size: 16px; font-weight: 600; color: #333;
+    margin-bottom: 20px; padding-bottom: 12px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .modal-field { margin-bottom: 16px; }
+  .modal-field label {
+    display: block; font-size: 12px; color: #555;
+    margin-bottom: 6px; font-weight: 600;
+  }
+  .modal-field input, .modal-field select, .modal-field textarea {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid #ccc; border-radius: 4px;
+    font-size: 13px; outline: none;
+    transition: border-color 0.15s;
+  }
+  .modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus {
+    border-color: #0078d4;
+    box-shadow: 0 0 0 2px rgba(0,120,212,0.2);
+  }
+  .modal-field textarea { resize: vertical; min-height: 60px; }
+  .modal-actions {
+    display: flex; justify-content: flex-end; gap: 8px;
+    margin-top: 20px; padding-top: 16px;
+    border-top: 1px solid #e0e0e0;
+  }
+  .btn {
+    padding: 8px 20px; border-radius: 4px;
+    font-size: 13px; cursor: pointer; border: none;
+    font-weight: 500; transition: background 0.1s;
+  }
+  .btn-primary { background: #0078d4; color: #fff; }
+  .btn-primary:hover { background: #106ebe; }
+  .btn-secondary { background: #f0f0f0; color: #333; border: 1px solid #ccc; }
+  .btn-secondary:hover { background: #e0e0e0; }
+  .btn-danger { background: #e81123; color: #fff; }
+  .btn-danger:hover { background: #c50f1f; }
+
+  /* ===== 通知 ===== */
+  #toast {
+    position: fixed; bottom: 64px; right: 16px;
+    background: rgba(0,0,0,0.85); color: #fff;
+    padding: 10px 18px; border-radius: 6px;
+    font-size: 13px; z-index: 200000;
+    opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  /* ===== スクロールバー ===== */
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: #f0f0f0; }
+  ::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #999; }
+
+  /* ===== アイコンSVGスタイル ===== */
+  .icon-shortcut-badge {
+    position: absolute; bottom: 0; left: 2px;
+    width: 14px; height: 14px;
+    background: white; border-radius: 2px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+  }
+
+  /* 選択ボックス */
+  #select-box {
+    position: absolute; border: 1px solid #0078d4;
+    background: rgba(0,120,212,0.1); pointer-events: none;
+    display: none; z-index: 50;
+  }
+</style>
+</head>
+<body>
+
+<!-- デスクトップ -->
+<div id="desktop">
+  <div id="select-box"></div>
+</div>
+
+<!-- タスクバー -->
+<div id="taskbar">
+  <button class="taskbar-start" title="スタート" onclick="showStartMenu()">⊞</button>
+  <div class="taskbar-tasks" id="taskbar-tasks"></div>
+  <div class="taskbar-tray">
+    <button class="tray-btn" title="リンクを追加" onclick="openAddModal('link', null)">🔗</button>
+    <button class="tray-btn" title="フォルダを追加" onclick="openAddModal('folder', null)">📁</button>
+    <button class="tray-btn" title="データをエクスポート" onclick="exportData()">💾</button>
+    <button class="tray-btn" title="データをインポート" onclick="importData()">📂</button>
+    <button class="tray-btn" title="壁紙を変更" onclick="changeWallpaper()">🖼️</button>
+    <div class="taskbar-clock" id="clock"></div>
+  </div>
+</div>
+
+<!-- コンテキストメニュー -->
+<div id="context-menu"></div>
+
+<!-- トースト通知 -->
+<div id="toast"></div>
+
+<!-- モーダルコンテナ -->
+<div id="modal-container"></div>
+
+<script>
+// ===== データ管理 =====
+const STORAGE_KEY = 'desktop_data_v1';
+
+let state = {
+  items: [],       // { id, type:'link'|'folder', name, url?, icon?, color?, x, y, parentId:null|id }
+  windows: [],     // { id, folderId, x, y, w, h, minimized }
+  wallpaper: null,
+};
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const loaded = JSON.parse(raw);
+      state = Object.assign(state, loaded);
+    }
+  } catch(e) {}
+  if (!state.items) state.items = [];
+  if (!state.windows) state.windows = [];
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+// ===== ユーティリティ =====
+function genId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+function toast(msg, duration = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ===== アイコンSVG =====
+function getLinkSvg(color) {
+  const c = color || '#0078d4';
+  return `<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <rect x="4" y="6" width="40" height="30" rx="3" fill="${c}"/>
+    <rect x="4" y="10" width="40" height="22" fill="white" opacity="0.9"/>
+    <rect x="8" y="14" width="24" height="2" rx="1" fill="${c}"/>
+    <rect x="8" y="19" width="18" height="2" rx="1" fill="${c}" opacity="0.6"/>
+    <rect x="8" y="24" width="21" height="2" rx="1" fill="${c}" opacity="0.6"/>
+    <polygon points="20,38 28,38 24,44" fill="${c}"/>
+    <rect x="12" y="38" width="24" height="3" rx="1.5" fill="${c}"/>
+  </svg>`;
+}
+
+function getFolderSvg(color) {
+  const c = color || '#e6a817';
+  return `<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+    <path d="M4 14 Q4 10 8 10 L18 10 L22 14 L40 14 Q44 14 44 18 L44 38 Q44 42 40 42 L8 42 Q4 42 4 38 Z" fill="${c}"/>
+    <path d="M4 18 L44 18 L44 38 Q44 42 40 42 L8 42 Q4 42 4 38 Z" fill="${c}" opacity="0.85"/>
+    <path d="M4 18 L44 18" stroke="white" stroke-width="0.5" opacity="0.4"/>
+  </svg>`;
+}
+
+function getIconHtml(item) {
+  if (item.icon && item.icon.startsWith('http')) {
+    return `<img src="${item.icon}" style="width:48px;height:48px;object-fit:contain;">`;
+  }
+  if (item.type === 'folder') {
+    return getFolderSvg(item.color);
+  }
+  return getLinkSvg(item.color);
+}
+
+// ===== アイコン作成 =====
+function createIconElement(item, container) {
+  const el = document.createElement('div');
+  el.className = 'icon';
+  el.dataset.id = item.id;
+
+  if (container === document.getElementById('desktop')) {
+    el.style.left = (item.x || 40) + 'px';
+    el.style.top  = (item.y || 40) + 'px';
+  }
+
+  el.innerHTML = `
+    <div class="icon-img">
+      ${getIconHtml(item)}
+      ${item.type === 'link' ? '<div class="icon-shortcut-badge">↗</div>' : ''}
+    </div>
+    <div class="icon-label">${escHtml(item.name)}</div>
+  `;
+
+  // ダブルクリック
+  el.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    if (item.type === 'link') {
+      window.open(item.url, '_blank');
+    } else {
+      openFolderWindow(item.id);
+    }
+  });
+
+  // 右クリック
+  el.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    showIconContextMenu(e, item);
+  });
+
+  // 選択
+  el.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    selectIcon(el);
+  });
+
+  // ドラッグ（デスクトップ上のみ）
+  if (container === document.getElementById('desktop')) {
+    makeDraggable(el, item);
+  }
+
+  return el;
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ===== ドラッグ移動 =====
+function makeDraggable(el, item) {
+  let dragging = false, ox = 0, oy = 0, startX = 0, startY = 0, moved = false;
+
+  el.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    const rect = el.getBoundingClientRect();
+    ox = e.clientX - rect.left;
+    oy = e.clientY - rect.top;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = Math.abs(e.clientX - startX);
+    const dy = Math.abs(e.clientY - startY);
+    if (dx > 4 || dy > 4) moved = true;
+    if (!moved) return;
+    el.classList.add('dragging');
+    const desktop = document.getElementById('desktop');
+    const dr = desktop.getBoundingClientRect();
+    let nx = e.clientX - dr.left - ox;
+    let ny = e.clientY - dr.top  - oy;
+    nx = Math.max(0, Math.min(nx, dr.width  - el.offsetWidth));
+    ny = Math.max(0, Math.min(ny, dr.height - el.offsetHeight));
+    el.style.left = nx + 'px';
+    el.style.top  = ny + 'px';
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!dragging) return;
+    dragging = false;
+    if (moved) {
+      el.classList.remove('dragging');
+      item.x = parseInt(el.style.left);
+      item.y = parseInt(el.style.top);
+      saveState();
+    }
+  });
+}
+
+// ===== アイコン選択 =====
+let selectedIcon = null;
+function selectIcon(el) {
+  if (selectedIcon) selectedIcon.classList.remove('selected');
+  selectedIcon = el;
+  if (el) el.classList.add('selected');
+}
+
+document.getElementById('desktop').addEventListener('mousedown', (e) => {
+  if (e.target === document.getElementById('desktop') || e.target === document.getElementById('select-box')) {
+    selectIcon(null);
+  }
+});
+
+// ===== デスクトップ描画 =====
+function renderDesktop() {
+  const desktop = document.getElementById('desktop');
+  // アイコンのみ削除（select-boxは残す）
+  desktop.querySelectorAll('.icon').forEach(el => el.remove());
+
+  const topItems = state.items.filter(i => !i.parentId);
+  topItems.forEach(item => {
+    const el = createIconElement(item, desktop);
+    desktop.appendChild(el);
+  });
+}
+
+// ===== フォルダウィンドウ =====
+function openFolderWindow(folderId) {
+  const folder = state.items.find(i => i.id === folderId);
+  if (!folder) return;
+
+  // 既存ウィンドウがあれば前面に
+  const existWin = document.getElementById('win_' + folderId);
+  if (existWin) {
+    if (existWin.style.display === 'none') existWin.style.display = 'flex';
+    bringToFront(existWin);
+    updateTaskbar();
+    return;
+  }
+
+  const winData = { id: folderId, x: 80, y: 60, w: 500, h: 360, minimized: false };
+
+  const win = document.createElement('div');
+  win.className = 'folder-window';
+  win.id = 'win_' + folderId;
+  win.style.left = winData.x + 'px';
+  win.style.top  = winData.y + 'px';
+  win.style.width  = winData.w + 'px';
+  win.style.height = winData.h + 'px';
+
+  win.innerHTML = `
+    <div class="window-titlebar">
+      <span class="window-folder-icon">📁</span>
+      <span class="window-title">${escHtml(folder.name)}</span>
+      <div class="window-controls">
+        <button class="win-btn win-btn-min" title="最小化">─</button>
+        <button class="win-btn win-btn-max" title="最大化">□</button>
+        <button class="win-btn win-btn-close" title="閉じる">✕</button>
+      </div>
+    </div>
+    <div class="window-content" id="wincontent_${folderId}"></div>
+    <div class="window-statusbar" id="winstatusbar_${folderId}"></div>
+  `;
+
+  // ウィンドウドラッグ
+  const titlebar = win.querySelector('.window-titlebar');
+  makeWindowDraggable(win, titlebar);
+
+  // ボタン
+  win.querySelector('.win-btn-close').addEventListener('click', () => {
+    win.remove();
+    updateTaskbar();
+  });
+  win.querySelector('.win-btn-min').addEventListener('click', () => {
+    win.style.display = 'none';
+    updateTaskbar();
+  });
+  win.querySelector('.win-btn-max').addEventListener('click', () => {
+    if (win.dataset.maximized === '1') {
+      win.style.left   = win.dataset.ox + 'px';
+      win.style.top    = win.dataset.oy + 'px';
+      win.style.width  = win.dataset.ow + 'px';
+      win.style.height = win.dataset.oh + 'px';
+      win.dataset.maximized = '0';
+    } else {
+      win.dataset.ox = win.offsetLeft;
+      win.dataset.oy = win.offsetTop;
+      win.dataset.ow = win.offsetWidth;
+      win.dataset.oh = win.offsetHeight;
+      win.style.left = '0'; win.style.top = '0';
+      win.style.width  = '100%';
+      win.style.height = 'calc(100vh - 48px)';
+      win.dataset.maximized = '1';
+    }
+  });
+
+  // 前面へ
+  win.addEventListener('mousedown', () => bringToFront(win));
+
+  // 右クリック（ウィンドウ内空白）
+  const content = win.querySelector('.window-content');
+  content.addEventListener('contextmenu', (e) => {
+    if (e.target === content) {
+      e.preventDefault();
+      showDesktopContextMenu(e, folderId);
+    }
+  });
+
+  document.getElementById('desktop').appendChild(win);
+  bringToFront(win);
+  renderFolderWindow(folderId);
+  updateTaskbar();
+}
+
+function renderFolderWindow(folderId) {
+  const content = document.getElementById('wincontent_' + folderId);
+  const statusbar = document.getElementById('winstatusbar_' + folderId);
+  if (!content) return;
+  content.innerHTML = '';
+
+  const children = state.items.filter(i => i.parentId === folderId);
+  children.forEach(item => {
+    const el = createIconElement(item, content);
+    content.appendChild(el);
+  });
+
+  if (statusbar) {
+    statusbar.textContent = `${children.length} 個のアイテム`;
+  }
+}
+
+function makeWindowDraggable(win, handle) {
+  let dragging = false, ox = 0, oy = 0;
+  handle.addEventListener('mousedown', (e) => {
+    if (e.target.classList.contains('win-btn')) return;
+    if (win.dataset.maximized === '1') return;
+    dragging = true;
+    ox = e.clientX - win.offsetLeft;
+    oy = e.clientY - win.offsetTop;
+    e.preventDefault();
+    bringToFront(win);
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    win.style.left = (e.clientX - ox) + 'px';
+    win.style.top  = (e.clientY - oy) + 'px';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+}
+
+let zCounter = 100;
+function bringToFront(win) {
+  document.querySelectorAll('.folder-window').forEach(w => w.classList.remove('active'));
+  win.classList.add('active');
+  win.style.zIndex = ++zCounter;
+}
+
+// ===== タスクバー =====
+function updateTaskbar() {
+  const container = document.getElementById('taskbar-tasks');
+  container.innerHTML = '';
+  document.querySelectorAll('.folder-window').forEach(win => {
+    const folderId = win.id.replace('win_', '');
+    const folder = state.items.find(i => i.id === folderId);
+    if (!folder) return;
+    const btn = document.createElement('button');
+    btn.className = 'taskbar-task-btn' + (win.classList.contains('active') ? ' active' : '');
+    btn.innerHTML = `📁 ${escHtml(folder.name)}`;
+    btn.addEventListener('click', () => {
+      if (win.style.display === 'none') {
+        win.style.display = 'flex';
+        bringToFront(win);
+      } else if (win.classList.contains('active')) {
+        win.style.display = 'none';
+      } else {
+        bringToFront(win);
+      }
+      updateTaskbar();
+    });
+    container.appendChild(btn);
+  });
+}
+
+// ===== コンテキストメニュー =====
+function showContextMenu(x, y, items) {
+  const menu = document.getElementById('context-menu');
+  menu.innerHTML = '';
+  items.forEach(item => {
+    if (item === 'sep') {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-separator';
+      menu.appendChild(sep);
+    } else {
+      const el = document.createElement('div');
+      el.className = 'ctx-item' + (item.danger ? ' danger' : '');
+      el.innerHTML = `<span class="ctx-icon">${item.icon || ''}</span>${escHtml(item.label)}`;
+      el.addEventListener('click', () => {
+        hideContextMenu();
+        item.action();
+      });
+      menu.appendChild(el);
+    }
+  });
+
+  menu.style.display = 'block';
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+
+  // 画面外補正
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    if (r.right  > window.innerWidth)  menu.style.left = (x - r.width)  + 'px';
+    if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px';
+  });
+}
+
+function hideContextMenu() {
+  document.getElementById('context-menu').style.display = 'none';
+}
+
+document.addEventListener('click', hideContextMenu);
+document.addEventListener('contextmenu', (e) => {
+  if (e.target === document.getElementById('desktop') ||
+      e.target.id === 'select-box') {
+    e.preventDefault();
+    showDesktopContextMenu(e, null);
+  }
+});
+
+function showDesktopContextMenu(e, parentId) {
+  showContextMenu(e.clientX, e.clientY, [
+    { icon:'🔗', label:'新しいリンクを追加', action: () => openAddModal('link',   parentId) },
+    { icon:'📁', label:'新しいフォルダを追加', action: () => openAddModal('folder', parentId) },
+    'sep',
+    { icon:'💾', label:'データをエクスポート', action: exportData },
+    { icon:'📂', label:'データをインポート',   action: importData },
+  ]);
+}
+
+function showIconContextMenu(e, item) {
+  const menuItems = [];
+  if (item.type === 'link') {
+    menuItems.push({ icon:'🔗', label:'リンクを開く', action: () => window.open(item.url, '_blank') });
+  } else {
+    menuItems.push({ icon:'📁', label:'フォルダを開く', action: () => openFolderWindow(item.id) });
+  }
+  menuItems.push('sep');
+  menuItems.push({ icon:'✏️', label:'編集', action: () => openEditModal(item) });
+  menuItems.push({ icon:'🗑️', label:'削除', danger: true, action: () => deleteItem(item) });
+  showContextMenu(e.clientX, e.clientY, menuItems);
+}
+
+// ===== モーダル =====
+function showModal(html, onInit) {
+  const container = document.getElementById('modal-container');
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `<div class="modal">${html}</div>`;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+  container.appendChild(overlay);
+  if (onInit) onInit(overlay.querySelector('.modal'));
+  return overlay;
+}
+
+function closeModal() {
+  const container = document.getElementById('modal-container');
+  if (container.lastChild) container.removeChild(container.lastChild);
+}
+
+// ===== リンク・フォルダ追加モーダル =====
+function openAddModal(type, parentId) {
+  const isLink = type === 'link';
+  const title  = isLink ? '🔗 新しいリンクを追加' : '📁 新しいフォルダを追加';
+
+  const html = `
+    <h2>${title}</h2>
+    <div class="modal-field">
+      <label>名前 *</label>
+      <input type="text" id="m_name" placeholder="${isLink ? 'サイト名' : 'フォルダ名'}" maxlength="50">
+    </div>
+    ${isLink ? `
+    <div class="modal-field">
+      <label>URL *</label>
+      <input type="url" id="m_url" placeholder="https://...">
+    </div>` : ''}
+    <div class="modal-field">
+      <label>アイコン色</label>
+      <input type="color" id="m_color" value="${isLink ? '#0078d4' : '#e6a817'}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" id="m_submit">追加</button>
+    </div>
+  `;
+
+  showModal(html, (modal) => {
+    modal.querySelector('#m_name').focus();
+    modal.querySelector('#m_submit').addEventListener('click', () => {
+      const name  = modal.querySelector('#m_name').value.trim();
+      const url   = isLink ? modal.querySelector('#m_url').value.trim() : null;
+      const color = modal.querySelector('#m_color').value;
+
+      if (!name) { alert('名前を入力してください'); return; }
+      if (isLink && !url) { alert('URLを入力してください'); return; }
+
+      // 自動配置
+      const pos = findFreePosition(parentId);
+
+      const item = {
+        id: genId(), type, name, color,
+        x: pos.x, y: pos.y,
+        parentId: parentId || null,
+      };
+      if (isLink) item.url = url;
+
+      state.items.push(item);
+      saveState();
+      renderAll();
+      closeModal();
+      toast(`「${name}」を追加しました`);
+    });
+
+    modal.querySelector('#m_name').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') modal.querySelector('#m_submit').click();
+    });
+  });
+}
+
+// ===== 編集モーダル =====
+function openEditModal(item) {
+  const isLink = item.type === 'link';
+  const html = `
+    <h2>${isLink ? '✏️ リンクを編集' : '✏️ フォルダを編集'}</h2>
+    <div class="modal-field">
+      <label>名前 *</label>
+      <input type="text" id="m_name" value="${escHtml(item.name)}" maxlength="50">
+    </div>
+    ${isLink ? `
+    <div class="modal-field">
+      <label>URL *</label>
+      <input type="url" id="m_url" value="${escHtml(item.url || '')}">
+    </div>` : ''}
+    <div class="modal-field">
+      <label>アイコン色</label>
+      <input type="color" id="m_color" value="${item.color || (isLink ? '#0078d4' : '#e6a817')}" style="width:60px;height:36px;padding:2px;cursor:pointer;">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" id="m_submit">保存</button>
+    </div>
+  `;
+
+  showModal(html, (modal) => {
+    modal.querySelector('#m_name').focus();
+    modal.querySelector('#m_submit').addEventListener('click', () => {
+      const name  = modal.querySelector('#m_name').value.trim();
+      const url   = isLink ? modal.querySelector('#m_url').value.trim() : null;
+      const color = modal.querySelector('#m_color').value;
+
+      if (!name) { alert('名前を入力してください'); return; }
+      if (isLink && !url) { alert('URLを入力してください'); return; }
+
+      item.name  = name;
+      item.color = color;
+      if (isLink) item.url = url;
+
+      saveState();
+      renderAll();
+      closeModal();
+      toast(`「${name}」を更新しました`);
+    });
+  });
+}
+
+// ===== アイテム削除 =====
+function deleteItem(item) {
+  const hasChildren = state.items.some(i => i.parentId === item.id);
+  const msg = item.type === 'folder' && hasChildren
+    ? `「${item.name}」フォルダとその中のアイテムをすべて削除しますか？`
+    : `「${item.name}」を削除しますか？`;
+
+  if (!confirm(msg)) return;
+
+  // フォルダの場合は子も削除
+  if (item.type === 'folder') {
+    deleteChildren(item.id);
+    // ウィンドウを閉じる
+    const win = document.getElementById('win_' + item.id);
+    if (win) win.remove();
+  }
+
+  state.items = state.items.filter(i => i.id !== item.id);
+  saveState();
+  renderAll();
+  toast(`「${item.name}」を削除しました`);
+}
+
+function deleteChildren(parentId) {
+  const children = state.items.filter(i => i.parentId === parentId);
+  children.forEach(child => {
+    if (child.type === 'folder') deleteChildren(child.id);
+    state.items = state.items.filter(i => i.id !== child.id);
+  });
+}
+
+// ===== 自動配置 =====
+function findFreePosition(parentId) {
+  if (parentId) return { x: 20, y: 20 }; // フォルダ内はflow
+  const occupied = state.items
+    .filter(i => !i.parentId)
+    .map(i => ({ x: i.x || 40, y: i.y || 40 }));
+
+  let col = 0, row = 0;
+  const step = 90, startX = 40, startY = 40;
+  const maxRows = Math.floor((window.innerHeight - 48 - startY) / step);
+
+  while (true) {
+    const cx = startX + col * step;
+    const cy = startY + row * step;
+    const free = !occupied.some(o => Math.abs(o.x - cx) < 60 && Math.abs(o.y - cy) < 70);
+    if (free) return { x: cx, y: cy };
+    row++;
+    if (row >= maxRows) { row = 0; col++; }
+    if (col > 20) return { x: startX, y: startY };
+  }
+}
+
+// ===== 全再描画 =====
+function renderAll() {
+  renderDesktop();
+  document.querySelectorAll('.folder-window').forEach(win => {
+    const folderId = win.id.replace('win_', '');
+    renderFolderWindow(folderId);
+    // タイトル更新
+    const folder = state.items.find(i => i.id === folderId);
+    if (folder) win.querySelector('.window-title').textContent = folder.name;
+  });
+  updateTaskbar();
+}
+
+// ===== エクスポート・インポート =====
+function exportData() {
+  const json = JSON.stringify(state, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `desktop_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('データをエクスポートしました');
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (!imported.items) throw new Error('形式が不正です');
+        if (!confirm('現在のデータをインポートしたデータで上書きします。よろしいですか？')) return;
+        state = imported;
+        saveState();
+        // ウィンドウをすべて閉じる
+        document.querySelectorAll('.folder-window').forEach(w => w.remove());
+        renderAll();
+        toast('データをインポートしました');
+      } catch(err) {
+        alert('インポートに失敗しました: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+// ===== 壁紙変更 =====
+function changeWallpaper() {
+  const presets = [
+    { label: 'デフォルト (青)', value: 'linear-gradient(135deg, #0078d4 0%, #005a9e 40%, #003d6b 100%)' },
+    { label: '夕焼け',          value: 'linear-gradient(135deg, #ff6b35 0%, #f7931e 50%, #ffcd3c 100%)' },
+    { label: 'フォレスト',      value: 'linear-gradient(135deg, #134e5e 0%, #71b280 100%)' },
+    { label: 'ダーク',          value: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)' },
+    { label: 'パープル',        value: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' },
+  ];
+
+  const optionsHtml = presets.map((p, i) =>
+    `<div style="padding:8px 12px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:10px;"
+      onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background=''"
+      onclick="applyWallpaper('${p.value}');closeModal()">
+      <div style="width:36px;height:24px;border-radius:3px;background:${p.value};border:1px solid #ccc;flex-shrink:0;"></div>
+      <span style="font-size:13px;">${p.label}</span>
+    </div>`
+  ).join('');
+
+  const html = `
+    <h2>🖼️ 壁紙を選択</h2>
+    <div style="margin-bottom:8px;">${optionsHtml}</div>
+    <div class="modal-field" style="margin-top:12px;">
+      <label>カスタム画像URL</label>
+      <input type="url" id="m_wallpaper_url" placeholder="https://example.com/image.jpg">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="applyCustomWallpaper();closeModal()">適用</button>
+    </div>
+  `;
+  showModal(html);
+}
+
+function applyWallpaper(value) {
+  document.body.style.background = value;
+  state.wallpaper = value;
+  saveState();
+}
+
+function applyCustomWallpaper() {
+  const url = document.getElementById('m_wallpaper_url')?.value.trim();
+  if (url) {
+    const val = `url('${url}') center/cover no-repeat`;
+    document.body.style.background = val;
+    state.wallpaper = val;
+    saveState();
+  }
+}
+
+// ===== 時計 =====
+function updateClock() {
+  const now = new Date();
+  const time = now.toLocaleTimeString('ja-JP', { hour:'2-digit', minute:'2-digit' });
+  const date = now.toLocaleDateString('ja-JP', { month:'2-digit', day:'2-digit', weekday:'short' });
+  document.getElementById('clock').innerHTML = `${time}<br>${date}`;
+}
+
+// ===== スタートメニュー（簡易） =====
+function showStartMenu() {
+  showContextMenu(8, window.innerHeight - 56, [
+    { icon:'🔗', label:'リンクを追加',     action: () => openAddModal('link',   null) },
+    { icon:'📁', label:'フォルダを追加',   action: () => openAddModal('folder', null) },
+    'sep',
+    { icon:'💾', label:'エクスポート',     action: exportData },
+    { icon:'📂', label:'インポート',       action: importData },
+    { icon:'🖼️', label:'壁紙を変更',      action: changeWallpaper },
+  ]);
+}
+
+// ===== 初期化 =====
+function init() {
+  loadState();
+  if (state.wallpaper) document.body.style.background = state.wallpaper;
+  renderAll();
+  updateClock();
+  setInterval(updateClock, 1000);
+}
+
+init();
+</script>
+</body>
+</html>
