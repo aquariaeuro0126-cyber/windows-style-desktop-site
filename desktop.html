@@ -259,6 +259,31 @@
   ::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: #999; }
 
+  /* ===== 画像D&Dドロップゾーン ===== */
+  .img-drop-zone {
+    border: 2px dashed #ccc; border-radius: 6px;
+    padding: 10px; text-align: center; font-size: 12px; color: #888;
+    cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    margin-top: 6px;
+  }
+  .img-drop-zone:hover, .img-drop-zone.dragover {
+    border-color: #0078d4; background: rgba(0,120,212,0.06); color: #0078d4;
+  }
+
+  /* ===== デスクトップD&Dオーバーレイ ===== */
+  #desktop-dropzone-overlay {
+    position: absolute; inset: 0; z-index: 500;
+    background: rgba(0,120,212,0.18);
+    border: 3px dashed #0078d4;
+    display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #desktop-dropzone-overlay span {
+    font-size: 20px; color: #fff; font-weight: 600;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0.4); padding: 12px 24px; border-radius: 8px;
+  }
+
   /* ===== アイコンSVGスタイル ===== */
   .icon-shortcut-badge {
     position: absolute; bottom: 0; left: 2px;
@@ -304,6 +329,10 @@
   <div id="trash-icon" onclick="showTrash()" title="ゴミ箱（クリックで履歴表示）">
     <div class="icon-img"><span id="trash-emoji" style="font-size:40px;">🗑️</span></div>
     <div class="icon-label">ゴミ箱</div>
+  </div>
+  <!-- 画像D&Dオーバーレイ -->
+  <div id="desktop-dropzone-overlay" style="display:none;">
+    <span>🖼️ 画像をドロップしてアイコンとして追加</span>
   </div>
 </div>
 
@@ -820,12 +849,23 @@ function iconFieldsHtml(iconType, iconEmoji, iconUrl, color, isFolder) {
       <input type="text" id="m_icon_emoji" value="${escHtml(iconEmoji || '')}" placeholder="例: 📊 🗂️ 🔖" maxlength="4" style="width:80px;font-size:22px;text-align:center;">
     </div>
     <div id="m_icon_url_row" class="modal-field" style="${iconType === 'url' ? '' : 'display:none'}">
-      <label>画像URL</label>
-      <input type="url" id="m_icon_url" value="${escHtml(iconUrl || '')}" placeholder="https://example.com/icon.png">
+      <label>画像（ファイルをドロップ または URL入力）</label>
+      <div id="m_img_drop_zone" class="img-drop-zone">
+        🖼️ ここに画像ファイルをドラッグ&ドロップ<br>
+        <span style="font-size:11px;color:#aaa;">または下のURLを直接入力</span>
+      </div>
+      <input type="text" id="m_icon_url" value="${escHtml(iconUrl || '')}" placeholder="https://example.com/icon.png" style="margin-top:6px;">
     </div>
-    <div style="margin-bottom:16px;">
-      <label style="display:block;font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">プレビュー</label>
-      <div id="m_icon_preview" style="width:56px;height:56px;background:#eee;border-radius:6px;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:32px;overflow:hidden;"></div>
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;">
+      <div>
+        <label style="display:block;font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">プレビュー</label>
+        <div id="m_icon_preview" style="width:56px;height:56px;background:#eee;border-radius:6px;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:32px;overflow:hidden;"></div>
+      </div>
+      <div id="m_img_drop_preview_wrap" style="display:none;">
+        <label style="display:block;font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">読み込んだ画像</label>
+        <img id="m_img_drop_preview" style="width:56px;height:56px;object-fit:contain;border:1px solid #ccc;border-radius:6px;" src="">
+        <button type="button" id="m_img_drop_clear" style="display:block;font-size:11px;color:#e81123;background:none;border:none;cursor:pointer;padding:2px 0;">✕ クリア</button>
+      </div>
     </div>
   `;
 }
@@ -846,7 +886,70 @@ function initIconFields(modal, isFolder, defaultColor) {
   modal.querySelector('#m_icon_emoji')?.addEventListener('input', () => updatePreview(modal, isFolder));
   modal.querySelector('#m_icon_url')?.addEventListener('input', () => updatePreview(modal, isFolder));
 
+  // ===== 画像D&Dゾーン =====
+  const dropZone = modal.querySelector('#m_img_drop_zone');
+  const urlInput = modal.querySelector('#m_icon_url');
+  if (dropZone && urlInput) {
+    // クリックでファイル選択ダイアログを開く
+    dropZone.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) loadImageFile(file, modal, isFolder);
+      });
+      input.click();
+    });
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        loadImageFile(file, modal, isFolder);
+      } else {
+        toast('画像ファイルをドロップしてください');
+      }
+    });
+
+    // クリアボタン
+    const clearBtn = modal.querySelector('#m_img_drop_clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        urlInput.value = '';
+        modal.querySelector('#m_img_drop_preview_wrap').style.display = 'none';
+        updatePreview(modal, isFolder);
+      });
+    }
+  }
+
   updatePreview(modal, isFolder);
+}
+
+// 画像ファイルをBase64に変換してモーダルに反映
+function loadImageFile(file, modal, isFolder) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    const urlInput = modal.querySelector('#m_icon_url');
+    const previewWrap = modal.querySelector('#m_img_drop_preview_wrap');
+    const previewImg  = modal.querySelector('#m_img_drop_preview');
+    if (urlInput) urlInput.value = dataUrl;
+    if (previewImg) previewImg.src = dataUrl;
+    if (previewWrap) previewWrap.style.display = '';
+    // 「画像URL」種別に切り替え
+    const radioUrl = modal.querySelector('input[name="m_icon_type"][value="url"]');
+    if (radioUrl) { radioUrl.checked = true; radioUrl.dispatchEvent(new Event('change')); }
+    updatePreview(modal, isFolder);
+    toast('画像を読み込みました');
+  };
+  reader.readAsDataURL(file);
 }
 
 function updatePreview(modal, isFolder) {
@@ -1337,6 +1440,111 @@ function showStartMenu() {
   ]);
 }
 
+// ===== デスクトップへの画像D&D（新規アイコン追加） =====
+function initDesktopImageDrop() {
+  const desktop = document.getElementById('desktop');
+  const overlay = document.getElementById('desktop-dropzone-overlay');
+  let dragCounter = 0; // dragenter/dragleaveの多重発火対策
+
+  desktop.addEventListener('dragenter', (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragCounter++;
+    overlay.style.display = 'flex';
+  });
+
+  desktop.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+  });
+
+  desktop.addEventListener('dragleave', (e) => {
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      overlay.style.display = 'none';
+    }
+  });
+
+  desktop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    overlay.style.display = 'none';
+
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+
+    // ドロップ位置を取得
+    const dr = desktop.getBoundingClientRect();
+    const dropX = e.clientX - dr.left - 40; // アイコン中央合わせ
+    const dropY = e.clientY - dr.top  - 45;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      // 名前入力ダイアログを開く（画像はすでにセット済み）
+      openAddModalWithImage(dataUrl, Math.max(0, dropX), Math.max(0, dropY));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// 画像セット済みの状態でリンク追加モーダルを開く
+function openAddModalWithImage(dataUrl, dropX, dropY) {
+  const html = `
+    <h2>🖼️ 画像アイコンを追加</h2>
+    <div class="modal-field">
+      <label>名前 *</label>
+      <input type="text" id="m_name" placeholder="サイト名やラベル" maxlength="50">
+    </div>
+    <div class="modal-field">
+      <label>URL（省略可）</label>
+      <input type="text" id="m_url" placeholder="https://... （省略するとフォルダになります）">
+    </div>
+    <div style="margin-bottom:16px;">
+      <label style="display:block;font-size:12px;color:#555;margin-bottom:6px;font-weight:600;">アイコン画像</label>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <img src="${dataUrl}" style="width:56px;height:56px;object-fit:contain;border:1px solid #ccc;border-radius:6px;">
+        <span style="font-size:12px;color:#555;">ドロップした画像をアイコンに使用します</span>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+      <button class="btn btn-primary" id="m_submit">追加</button>
+    </div>
+  `;
+
+  showModal(html, (modal) => {
+    modal.querySelector('#m_name').focus();
+    modal.querySelector('#m_submit').addEventListener('click', () => {
+      const name = modal.querySelector('#m_name').value.trim();
+      const url  = modal.querySelector('#m_url').value.trim();
+
+      if (!name) { alert('名前を入力してください'); return; }
+
+      const type = url ? 'link' : 'folder';
+      const item = {
+        id: genId(), type, name,
+        iconType: 'url', iconEmoji: '', iconUrl: dataUrl,
+        color: type === 'folder' ? '#e6a817' : '#0078d4',
+        x: dropX, y: dropY,
+        parentId: null,
+      };
+      if (url) item.url = url;
+
+      state.items.push(item);
+      saveState();
+      renderAll();
+      closeModal();
+      toast(`「${name}」を追加しました`);
+    });
+
+    modal.querySelector('#m_name').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') modal.querySelector('#m_submit').click();
+    });
+  });
+}
+
 // ===== 初期化 =====
 function init() {
   loadState();
@@ -1345,6 +1553,7 @@ function init() {
   updateClock();
   setInterval(updateClock, 1000);
   initTrashDrop();
+  initDesktopImageDrop();
   updateTrashIcon();
 }
 
