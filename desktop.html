@@ -504,8 +504,14 @@ function makeDraggable(el, item) {
       // ゴミ箱ドロップ処理は initTrashDrop 側で行うため、
       // _draggingItem が残っていれば位置を保存
       if (window._draggingItem === item) {
-        item.x = parseInt(el.style.left);
-        item.y = parseInt(el.style.top);
+        let nx = parseInt(el.style.left);
+        let ny = parseInt(el.style.top);
+        // 重なり防止: 他のアイコンと重複する場合は近傍の空きセルにスナップ
+        const resolved = resolveOverlap(item.id, nx, ny);
+        item.x = resolved.x;
+        item.y = resolved.y;
+        el.style.left = resolved.x + 'px';
+        el.style.top  = resolved.y + 'px';
         saveState();
         window._draggingItem = null;
       }
@@ -1066,6 +1072,8 @@ function showTrash() {
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(entry.name)}${children}</div>
         <div style="font-size:11px;color:#888;">${date}</div>
       </div>
+      <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;flex-shrink:0;"
+        onclick="restoreItem('${entry.id}')">↩ 元に戻す</button>
     </div>`;
   }).join('');
 
@@ -1086,6 +1094,38 @@ function clearTrash() {
   saveState();
   closeModal();
   toast('削除履歴を消去しました');
+}
+
+// ===== 削除履歴から元に戻す =====
+function restoreItem(trashId) {
+  const entry = state.trash.find(t => t.id === trashId);
+  if (!entry) return;
+
+  // メインアイテムを復元（位置は重複回避した空き位置に）
+  const restored = { ...entry.snapshot };
+  if (!restored.parentId) {
+    // デスクトップ直置きの場合は空き位置を探す
+    const pos = findFreePosition(null);
+    restored.x = pos.x;
+    restored.y = pos.y;
+  }
+  state.items.push(restored);
+
+  // 子アイテムも復元
+  if (entry.childSnapshots && entry.childSnapshots.length > 0) {
+    entry.childSnapshots.forEach(child => {
+      state.items.push({ ...child });
+    });
+  }
+
+  // ゴミ箱から削除
+  state.trash = state.trash.filter(t => t.id !== trashId);
+
+  saveState();
+  closeModal();
+  renderAll();
+  updateTrashIcon();
+  toast(`「${entry.name}」を元に戻しました`);
 }
 
 // ===== ゴミ箱ドラッグ＆ドロップ =====
@@ -1113,6 +1153,42 @@ function initTrashDrop() {
     }
     window._draggingItem = null;
   });
+}
+
+// ===== 重なり解決 =====
+// ドラッグ後、他アイコンと重なっていたら近傍の空きセルにスナップ
+function resolveOverlap(itemId, nx, ny) {
+  const ICON_W = 80, ICON_H = 90; // アイコンの占有サイズ（px）
+  const others = state.items.filter(i => !i.parentId && i.id !== itemId);
+
+  function overlaps(ax, ay) {
+    return others.some(o => {
+      const ox = o.x || 40, oy = o.y || 40;
+      return Math.abs(ax - ox) < ICON_W && Math.abs(ay - oy) < ICON_H;
+    });
+  }
+
+  if (!overlaps(nx, ny)) return { x: nx, y: ny }; // 重なりなし
+
+  // 重なる場合: スパイラル状に近傍のグリッドセルを探す
+  const STEP = 90;
+  const desktop = document.getElementById('desktop');
+  const maxW = desktop ? desktop.offsetWidth  - ICON_W : window.innerWidth  - ICON_W;
+  const maxH = desktop ? desktop.offsetHeight - ICON_H : window.innerHeight - 48 - ICON_H;
+
+  for (let radius = 1; radius <= 10; radius++) {
+    for (let dc = -radius; dc <= radius; dc++) {
+      for (let dr = -radius; dr <= radius; dr++) {
+        if (Math.abs(dc) !== radius && Math.abs(dr) !== radius) continue; // 外周のみ
+        const cx = nx + dc * STEP;
+        const cy = ny + dr * STEP;
+        if (cx < 0 || cy < 0 || cx > maxW || cy > maxH) continue;
+        if (!overlaps(cx, cy)) return { x: cx, y: cy };
+      }
+    }
+  }
+  // 見つからなければ元の位置のまま
+  return { x: nx, y: ny };
 }
 
 // ===== 自動配置 =====
