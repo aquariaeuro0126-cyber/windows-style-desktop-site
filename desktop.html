@@ -332,7 +332,7 @@
   </div>
   <!-- 画像D&Dオーバーレイ -->
   <div id="desktop-dropzone-overlay" style="display:none;">
-    <span>🖼️ 画像をドロップしてアイコンとして追加</span>
+    <span>🖼️ 画像をドロップ → 壁紙 or アイコンとして追加</span>
   </div>
 </div>
 
@@ -1393,15 +1393,95 @@ function changeWallpaper() {
     <h2>🖼️ 壁紙を選択</h2>
     <div style="margin-bottom:8px;">${optionsHtml}</div>
     <div class="modal-field" style="margin-top:12px;">
+      <label>画像ファイル（ドロップ または クリックで選択）</label>
+      <div id="m_wallpaper_drop_zone" class="img-drop-zone">
+        🖼️ ここに画像ファイルをドラッグ&ドロップ<br>
+        <span style="font-size:11px;color:#aaa;">または下のURLを直接入力</span>
+      </div>
+      <div id="m_wallpaper_drop_preview_wrap" style="display:none;margin-top:8px;">
+        <img id="m_wallpaper_drop_preview"
+          style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;border:1px solid #ccc;">
+        <button type="button" id="m_wallpaper_drop_clear"
+          style="font-size:11px;color:#e81123;background:none;border:none;cursor:pointer;padding:2px 0;">✕ クリア</button>
+      </div>
+    </div>
+    <div class="modal-field">
       <label>カスタム画像URL</label>
       <input type="url" id="m_wallpaper_url" placeholder="https://example.com/image.jpg">
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
-      <button class="btn btn-primary" onclick="applyCustomWallpaper();closeModal()">適用</button>
+      <button class="btn btn-primary" id="m_wallpaper_apply">適用</button>
     </div>
   `;
-  showModal(html);
+  showModal(html, (modal) => {
+    // D&Dゾーンの処理
+    const dropZone = modal.querySelector('#m_wallpaper_drop_zone');
+    const urlInput = modal.querySelector('#m_wallpaper_url');
+    let droppedDataUrl = null;
+
+    dropZone.addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) loadWallpaperFile(file, modal, (url) => { droppedDataUrl = url; });
+      });
+      input.click();
+    });
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type.startsWith('image/')) {
+        loadWallpaperFile(file, modal, (url) => { droppedDataUrl = url; });
+      } else {
+        toast('画像ファイルをドロップしてください');
+      }
+    });
+
+    modal.querySelector('#m_wallpaper_drop_clear').addEventListener('click', () => {
+      droppedDataUrl = null;
+      modal.querySelector('#m_wallpaper_drop_preview_wrap').style.display = 'none';
+      urlInput.value = '';
+    });
+
+    // 適用ボタン
+    modal.querySelector('#m_wallpaper_apply').addEventListener('click', () => {
+      if (droppedDataUrl) {
+        applyWallpaper(`url('${droppedDataUrl}') center/cover no-repeat`);
+        closeModal();
+        toast('壁紙を設定しました');
+      } else {
+        const url = urlInput.value.trim();
+        if (url) {
+          applyWallpaper(`url('${url}') center/cover no-repeat`);
+          closeModal();
+          toast('壁紙を設定しました');
+        }
+      }
+    });
+  });
+}
+
+function loadWallpaperFile(file, modal, onLoad) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const dataUrl = ev.target.result;
+    const previewWrap = modal.querySelector('#m_wallpaper_drop_preview_wrap');
+    const previewImg  = modal.querySelector('#m_wallpaper_drop_preview');
+    if (previewImg) previewImg.src = dataUrl;
+    if (previewWrap) previewWrap.style.display = '';
+    if (onLoad) onLoad(dataUrl);
+    toast('画像を読み込みました');
+  };
+  reader.readAsDataURL(file);
 }
 
 function applyWallpaper(value) {
@@ -1410,15 +1490,6 @@ function applyWallpaper(value) {
   saveState();
 }
 
-function applyCustomWallpaper() {
-  const url = document.getElementById('m_wallpaper_url')?.value.trim();
-  if (url) {
-    const val = `url('${url}') center/cover no-repeat`;
-    document.body.style.background = val;
-    state.wallpaper = val;
-    saveState();
-  }
-}
 
 // ===== 時計 =====
 function updateClock() {
@@ -1482,10 +1553,55 @@ function initDesktopImageDrop() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target.result;
-      // 名前入力ダイアログを開く（画像はすでにセット済み）
-      openAddModalWithImage(dataUrl, Math.max(0, dropX), Math.max(0, dropY));
+      // 壁紙 or アイコン追加の選択ダイアログを表示
+      showImageDropChoiceModal(dataUrl, Math.max(0, dropX), Math.max(0, dropY));
     };
     reader.readAsDataURL(file);
+  });
+}
+
+// ===== D&D後の用途選択モーダル =====
+function showImageDropChoiceModal(dataUrl, dropX, dropY) {
+  const html = `
+    <h2>🖼️ この画像をどのように使いますか？</h2>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <img src="${dataUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid #ccc;flex-shrink:0;">
+      <span style="font-size:13px;color:#555;">ドロップした画像の使い方を選んでください</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
+      <button class="btn btn-primary" id="m_choice_wallpaper"
+        style="text-align:left;padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">🖥️</span>
+        <div>
+          <div style="font-weight:600;">壁紙に設定する</div>
+          <div style="font-size:11px;font-weight:normal;opacity:0.85;">デスクトップの背景画像として使用</div>
+        </div>
+      </button>
+      <button class="btn btn-secondary" id="m_choice_icon"
+        style="text-align:left;padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:20px;">🔗</span>
+        <div>
+          <div style="font-weight:600;">アイコンとして追加する</div>
+          <div style="font-size:11px;font-weight:normal;opacity:0.7;">リンクまたはフォルダのアイコン画像として追加</div>
+        </div>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">キャンセル</button>
+    </div>
+  `;
+
+  showModal(html, (modal) => {
+    modal.querySelector('#m_choice_wallpaper').addEventListener('click', () => {
+      closeModal();
+      const val = `url('${dataUrl}') center/cover no-repeat`;
+      applyWallpaper(val);
+      toast('壁紙を設定しました');
+    });
+    modal.querySelector('#m_choice_icon').addEventListener('click', () => {
+      closeModal();
+      openAddModalWithImage(dataUrl, dropX, dropY);
+    });
   });
 }
 
